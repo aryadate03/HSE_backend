@@ -3,7 +3,7 @@ const User = require('../models/User');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../services/uploadService');
 const { sendIncidentSubmittedNotification } = require('../services/notificationService');
 const { successResponse } = require('../utils/errorResponse');
-const { AppError } = require('../middleware/errorHandler');
+const { AppError } = require('../middleware/errorhandler');
 const { logAction } = require('../services/incidentLogService');
 
 // ─── CREATE INCIDENT ──────────────────────────────────────────────────────────
