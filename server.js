@@ -1,10 +1,13 @@
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT:', err.message, err.stack);
+});
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 require('dotenv').config();
-
 const connectDB = require('./config/database');
 const { errorHandler } = require('./middleware/errorhandler');
 
