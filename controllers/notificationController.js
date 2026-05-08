@@ -1,6 +1,6 @@
 const Notification = require('../models/Notification');
 const { successResponse } = require('../utils/errorResponse');
-const { AppError } = require('../middleware/errorHandler');
+const { AppError } = require('../middleware/errorhandler');
 
 // ─── GET USER NOTIFICATIONS ───────────────────────────────────────────────────
 const getUserNotifications = async (req, res, next) => {
