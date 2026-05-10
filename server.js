@@ -16,8 +16,20 @@ const app = express();
 connectDB();
 
 app.use(helmet({ crossOriginResourcePolicy: false }));
+
+// ─── CORS — allow all Vercel preview + production URLs ────────────────────────
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman)
+    if (!origin) return callback(null, true);
+    // Allow localhost
+    if (origin.includes('localhost')) return callback(null, true);
+    // Allow all vercel.app domains
+    if (origin.includes('vercel.app')) return callback(null, true);
+    // Allow custom FRONTEND_URL if set
+    if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 
