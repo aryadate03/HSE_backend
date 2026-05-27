@@ -58,37 +58,74 @@ const CHECKLIST_QUESTIONS = {
   ],
 };
 
-// ─── Matching Algorithm — pairs ALL workers ───────────────────────────────────
-const matchWorkers = (workers) => {
+// ─── Seeded shuffle — same date = same shuffle (consistent within a day) ─────
+// But different date = different shuffle (different pairs every day)
+const seededShuffle = (array, seed) => {
+  const arr = [...array];
+  let s = seed;
+  for (let i = arr.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) & 0xffffffff; // LCG random
+    const j = Math.abs(s) % (i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+// ─── Get date seed — unique number per day ────────────────────────────────────
+const getDateSeed = (date) => {
+  const d = new Date(date);
+  // e.g. 20250527 → unique number every day
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+};
+
+// ─── Matching Algorithm — random pairs every day ──────────────────────────────
+const matchWorkers = (workers, date) => {
   const LEVEL_RANK = { junior: 1, mid: 2, senior: 3, expert: 4 };
   const pairs = [];
 
-  const sorted = [...workers].sort((a, b) => b.safetyScore - a.safetyScore);
+  // ✅ Split into seniors and juniors
+  const seniors = workers.filter(w => (LEVEL_RANK[w.experienceLevel] || 1) >= 3); // senior + expert
+  const juniors = workers.filter(w => (LEVEL_RANK[w.experienceLevel] || 1) < 3);  // junior + mid
 
-  for (let i = 0; i < sorted.length - 1; i += 2) {
-    const workerA = sorted[i];
-    const workerB = sorted[i + 1];
-    const rankA = LEVEL_RANK[workerA.experienceLevel] || 1;
-    const rankB = LEVEL_RANK[workerB.experienceLevel] || 1;
+  const seed = getDateSeed(date);
 
+  // ✅ Shuffle both groups using today's date as seed — different every day
+  const shuffledSeniors = seededShuffle(seniors, seed);
+  const shuffledJuniors = seededShuffle(juniors, seed + 1);
+
+  // ✅ Pair senior[i] with junior[i]
+  const minLen = Math.min(shuffledSeniors.length, shuffledJuniors.length);
+  for (let i = 0; i < minLen; i++) {
+    pairs.push({ senior: shuffledSeniors[i], junior: shuffledJuniors[i] });
+  }
+
+  // ✅ Leftover workers (if uneven senior/junior split) — pair among themselves randomly
+  const leftoverSeniors = shuffledSeniors.slice(minLen);
+  const leftoverJuniors = shuffledJuniors.slice(minLen);
+  const leftovers = seededShuffle([...leftoverSeniors, ...leftoverJuniors], seed + 2);
+
+  for (let i = 0; i < leftovers.length - 1; i += 2) {
+    const a = leftovers[i];
+    const b = leftovers[i + 1];
+    const rankA = LEVEL_RANK[a.experienceLevel] || 1;
+    const rankB = LEVEL_RANK[b.experienceLevel] || 1;
     if (rankA >= rankB) {
-      pairs.push({ senior: workerA, junior: workerB });
+      pairs.push({ senior: a, junior: b });
     } else {
-      pairs.push({ senior: workerB, junior: workerA });
+      pairs.push({ senior: b, junior: a });
     }
   }
 
-  // Odd number of workers — pair leftover with first pair's junior
-  if (sorted.length % 2 !== 0 && sorted.length >= 3) {
-    const leftover = sorted[sorted.length - 1];
-    const firstPairJunior = pairs[0]?.junior;
-    if (firstPairJunior) {
-      const rankL = LEVEL_RANK[leftover.experienceLevel] || 1;
-      const rankJ = LEVEL_RANK[firstPairJunior.experienceLevel] || 1;
+  // ✅ Odd leftover — add to first pair's junior slot
+  if (leftovers.length % 2 !== 0) {
+    const lastWorker = leftovers[leftovers.length - 1];
+    if (pairs[0]) {
+      const rankL = LEVEL_RANK[lastWorker.experienceLevel] || 1;
+      const rankJ = LEVEL_RANK[pairs[0].junior.experienceLevel] || 1;
       if (rankL >= rankJ) {
-        pairs.push({ senior: leftover, junior: firstPairJunior });
+        pairs.push({ senior: lastWorker, junior: pairs[0].junior });
       } else {
-        pairs.push({ senior: firstPairJunior, junior: leftover });
+        pairs.push({ senior: pairs[0].junior, junior: lastWorker });
       }
     }
   }
@@ -124,7 +161,8 @@ const createDailyPairs = async (req, res, next) => {
       ));
     }
 
-    const pairs = matchWorkers(workers);
+    // ✅ Pass today's date to matchWorkers for daily randomness
+    const pairs = matchWorkers(workers, today);
     const questions = CHECKLIST_QUESTIONS[taskType] || CHECKLIST_QUESTIONS.general;
     const createdPairs = [];
 
