@@ -40,8 +40,9 @@ exports.getDashboard = async (req, res, next) => {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Safety officer sees ALL forwarded + investigating + resolved incidents
+    // ✅ FIXED: Sirf is officer ko assigned incidents
     const baseFilter = {
+      'investigation.assignedTo': req.user._id,
       status: { $in: ['forwarded_to_safety_officer', 'investigating', 'resolved', 'closed'] },
       isDraft: false,
     };
@@ -49,31 +50,49 @@ exports.getDashboard = async (req, res, next) => {
     const [active, overdue, resolved, critical, recentCases] = await Promise.all([
       Incident.countDocuments({ ...baseFilter, status: { $in: ['forwarded_to_safety_officer', 'investigating'] } }),
       Incident.countDocuments({ ...baseFilter, status: { $in: ['forwarded_to_safety_officer', 'investigating'] }, createdAt: { $lt: sevenDaysAgo } }),
-      Incident.countDocuments({ status: { $in: ['resolved', 'closed'] }, isDraft: false }),
+      Incident.countDocuments({ ...baseFilter, status: { $in: ['resolved', 'closed'] } }),
       Incident.countDocuments({ ...baseFilter, severity: 'critical', status: { $nin: ['resolved', 'closed'] } }),
-      Incident.find({ status: { $in: ['forwarded_to_safety_officer', 'investigating'] }, isDraft: false })
+      Incident.find({ 'investigation.assignedTo': req.user._id, status: { $in: ['forwarded_to_safety_officer', 'investigating'] }, isDraft: false })
         .sort({ createdAt: -1 })
         .limit(5)
         .populate('reportedBy', 'name department')
         .lean(),
     ]);
 
-    // Monthly trend for chart
+    // ✅ FIXED: Monthly trend — sirf is officer ke incidents
     const monthlyTrend = await Incident.aggregate([
-      { $match: { isDraft: false, createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 6)) } } },
+      {
+        $match: {
+          'investigation.assignedTo': req.user._id,
+          isDraft: false,
+          createdAt: { $gte: new Date(new Date().setMonth(new Date().getMonth() - 6)) },
+        },
+      },
       { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]);
 
-    // By severity
+    // ✅ FIXED: By severity — sirf is officer ke incidents
     const bySeverity = await Incident.aggregate([
-      { $match: { status: { $in: ['forwarded_to_safety_officer', 'investigating'] }, isDraft: false } },
+      {
+        $match: {
+          'investigation.assignedTo': req.user._id,
+          status: { $in: ['forwarded_to_safety_officer', 'investigating'] },
+          isDraft: false,
+        },
+      },
       { $group: { _id: '$severity', count: { $sum: 1 } } },
     ]);
 
-    // By status
+    // ✅ FIXED: By status — sirf is officer ke incidents
     const byStatus = await Incident.aggregate([
-      { $match: { status: { $in: ['forwarded_to_safety_officer', 'investigating', 'resolved', 'closed'] }, isDraft: false } },
+      {
+        $match: {
+          'investigation.assignedTo': req.user._id,
+          status: { $in: ['forwarded_to_safety_officer', 'investigating', 'resolved', 'closed'] },
+          isDraft: false,
+        },
+      },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
 
@@ -96,18 +115,18 @@ exports.getDashboard = async (req, res, next) => {
 };
 
 // @route GET /api/safety-officer/cases
-// Shows ALL forwarded_to_safety_officer + investigating incidents
+// ✅ FIXED: Sirf is officer ko assigned cases
 exports.getAssignedCases = async (req, res, next) => {
   try {
     const { status, severity, page = 1, limit = 10 } = req.query;
 
-    // Base: show forwarded + investigating incidents (not just assigned to this officer)
+    // ✅ FIXED: assignedTo filter add kiya
     const filter = {
+      'investigation.assignedTo': req.user._id,
       isDraft: false,
       status: { $in: ['forwarded_to_safety_officer', 'investigating', 'resolved', 'closed'] },
     };
 
-    // Allow filtering by specific status
     if (status && status !== 'all') {
       const statusMap = {
         not_started: 'forwarded_to_safety_officer',
@@ -148,7 +167,9 @@ exports.getAssignedCases = async (req, res, next) => {
 exports.getOverdueCases = async (req, res, next) => {
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // ✅ FIXED: sirf is officer ke overdue cases
     const cases = await Incident.find({
+      'investigation.assignedTo': req.user._id,
       isDraft: false,
       status: { $in: ['forwarded_to_safety_officer', 'investigating'] },
       createdAt: { $lt: sevenDaysAgo },
@@ -166,8 +187,10 @@ exports.getOverdueCases = async (req, res, next) => {
 // @route GET /api/safety-officer/cases/:id
 exports.getCaseById = async (req, res, next) => {
   try {
+    // ✅ FIXED: sirf is officer ka case
     const incident = await Incident.findOne({
       _id: req.params.id,
+      'investigation.assignedTo': req.user._id,
       isDraft: false,
       status: { $in: ['forwarded_to_safety_officer', 'investigating', 'resolved', 'closed'] },
     })
@@ -176,7 +199,7 @@ exports.getCaseById = async (req, res, next) => {
       .populate('supervisorReview.reviewedBy', 'name')
       .lean();
 
-    if (!incident) return next(new AppError('Case not found.', 404));
+    if (!incident) return next(new AppError('Case not found or not assigned to you.', 404));
 
     const investigation = await Investigation.findOne({ incident: incident._id })
       .populate('investigator', 'name')
@@ -193,20 +216,22 @@ exports.getCaseById = async (req, res, next) => {
 };
 
 // @route PUT /api/safety-officer/cases/:id/start
-// Safety officer starts investigation
 exports.startInvestigation = async (req, res, next) => {
   try {
+    // ✅ FIXED: sirf assigned officer start kar sake
     const incident = await Incident.findOne({
       _id: req.params.id,
+      'investigation.assignedTo': req.user._id,
       isDraft: false,
       status: 'forwarded_to_safety_officer',
     });
-    if (!incident) return next(new AppError('Case not found or already being investigated.', 404));
+    if (!incident) return next(new AppError('Case not found or not assigned to you.', 404));
 
     incident.status = 'investigating';
     incident.investigation = {
+      ...incident.investigation,
       assignedTo: req.user._id,
-      assignedAt: new Date(),
+      assignedAt: incident.investigation?.assignedAt || new Date(),
     };
     await incident.save();
 
@@ -416,14 +441,18 @@ exports.updateInvestigationStatus = async (req, res, next) => {
 };
 
 // @route POST /api/safety-officer/cases/:id/resolve
-// Safety officer resolves the incident
 exports.resolveCase = async (req, res, next) => {
   try {
     const { resolutionNote } = req.body;
     if (!resolutionNote?.trim()) return next(new AppError('Resolution note is required.', 400));
 
-    const incident = await Incident.findOne({ _id: req.params.id, isDraft: false });
-    if (!incident) return next(new AppError('Case not found.', 404));
+    // ✅ FIXED: sirf assigned officer resolve kar sake
+    const incident = await Incident.findOne({
+      _id: req.params.id,
+      'investigation.assignedTo': req.user._id,
+      isDraft: false,
+    });
+    if (!incident) return next(new AppError('Case not found or not assigned to you.', 404));
 
     incident.status = 'resolved';
     incident.investigation = {
@@ -433,6 +462,7 @@ exports.resolveCase = async (req, res, next) => {
       resolutionNote: resolutionNote.trim(),
     };
     await incident.save();
+
     const { sendResolvedNotification } = require('../services/notificationService');
     const supervisor = await User.findOne({ role: 'supervisor', isActive: true });
     const recipients = [incident.reportedBy, supervisor?._id].filter(Boolean);
@@ -482,7 +512,6 @@ exports.closeCase = async (req, res, next) => {
 };
 
 // @route POST /api/safety-officer/cases/:id/report
-// Send report to management
 exports.sendReport = async (req, res, next) => {
   try {
     const { content, summary } = req.body;
@@ -509,7 +538,12 @@ exports.sendReport = async (req, res, next) => {
 // @route GET /api/safety-officer/analytics
 exports.getAnalytics = async (req, res, next) => {
   try {
-    const filter = { isDraft: false, status: { $in: ['forwarded_to_safety_officer','investigating','resolved','closed'] } };
+    // ✅ FIXED: sirf is officer ke analytics
+    const filter = {
+      'investigation.assignedTo': req.user._id,
+      isDraft: false,
+      status: { $in: ['forwarded_to_safety_officer','investigating','resolved','closed'] },
+    };
 
     const [byStatus, bySeverity, byType] = await Promise.all([
       Incident.aggregate([{ $match: filter }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
