@@ -1,33 +1,31 @@
-const fs = require('fs');
-const path = require('path');
+const { cloudinary } = require('../config/cloudinary');
+const streamifier = require('streamifier');
 
-// ─── Get public URL for a file ────────────────────────────────────────────────
-const getFileUrl = (filename) => {
-  const baseUrl = process.env.BACKEND_URL || 'http://localhost:5000';
-  return `${baseUrl}/uploads/${filename}`;
+const uploadToCloudinary = (file) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'hse/incidents',
+        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+        transformation: [{ width: 1200, quality: 'auto' }],
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve({
+          url:        result.secure_url,
+          publicId:   result.public_id,
+          filename:   file.originalname,
+          uploadedAt: new Date(),
+        });
+      }
+    );
+    streamifier.createReadStream(file.buffer).pipe(stream);
+  });
 };
 
-// ─── Save file info (replaces uploadToCloudinary) ────────────────────────────
-const uploadToCloudinary = async (file) => {
-  // file is the multer file object from disk storage
-  return {
-    url: getFileUrl(file.filename),
-    publicId: file.filename,
-    filename: file.filename,
-    uploadedAt: new Date(),
-  };
-};
-
-// ─── Delete file from local storage ──────────────────────────────────────────
 const deleteFromCloudinary = async (publicId) => {
-  try {
-    const filePath = path.join(__dirname, '..', 'uploads', publicId);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-  } catch (err) {
-    console.error('File delete error:', err.message);
-  }
+  if (!publicId) return;
+  await cloudinary.uploader.destroy(publicId);
 };
 
 module.exports = { uploadToCloudinary, deleteFromCloudinary };
