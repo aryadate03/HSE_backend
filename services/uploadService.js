@@ -1,32 +1,16 @@
-const { cloudinary } = require('../config/cloudinary');
-const streamifier = require('streamifier');
-
-const uploadToCloudinary = (file) => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'hse/incidents',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-        transformation: [{ width: 1200, quality: 'auto' }],
-      },
-    
-      (error, result) => {
-        if (error) return reject(error);
-        resolve({
-          url:        result.secure_url,
-          publicId:   result.public_id,
-          filename:   file.originalname,
-          uploadedAt: new Date(),
-        });
-      }
-    );
-    streamifier.createReadStream(file.buffer).pipe(stream);
-  });
-};
-
 const deleteFromCloudinary = async (publicId) => {
+  const { cloudinary } = require('../config/cloudinary');
   if (!publicId) return;
   await cloudinary.uploader.destroy(publicId);
+};
+
+const uploadToCloudinary = (file) => {
+  return {
+    url:        file.path,
+    publicId:   file.filename,
+    filename:   file.originalname,
+    uploadedAt: new Date(),
+  };
 };
 
 module.exports = { uploadToCloudinary, deleteFromCloudinary };
