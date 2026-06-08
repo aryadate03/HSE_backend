@@ -1,31 +1,32 @@
-const multer = require('multer');
-const path = require('path');
 const { AppError } = require('./errorhandler');
+const { uploadIncidentPhotos } = require('../config/cloudinary');
+const multer = require('multer');
 
-// ─── Memory Storage (Vercel compatible — no local filesystem writes) ──────────
-const storage = multer.memoryStorage();
+// ─── Cloudinary Storage (replaces memory storage) ─────────────────────────────
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const { cloudinary } = require('../config/cloudinary');
 
-// ─── File Filter ──────────────────────────────────────────────────────────────
-const fileFilter = (req, file, cb) => {
-  const allowed = ['image/jpeg', 'image/jpg', 'image/png'];
-  if (allowed.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new AppError('Only JPG and PNG images are allowed', 400), false);
-  }
-};
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+const inspectionStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: 'hse/inspections',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    transformation: [{ width: 1200, quality: 'auto' }],
+  },
 });
 
-// ─── Single photo upload (used by safety officer inspection photos) ───────────
-const uploadSingle = upload.single('photo');
+const uploadInspectionPhotos = multer({
+  storage: inspectionStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    allowed.includes(file.mimetype) ? cb(null, true) : cb(new AppError('Only JPG and PNG images are allowed', 400), false);
+  },
+});
 
-// ─── Multiple photos upload (max 5 for worker, max 10 for safety officer) ─────
-const uploadMultiple = upload.array('photos', 5);
-const uploadInspection = upload.array('photos', 10);
+// ─── Exports ──────────────────────────────────────────────────────────────────
+const uploadSingle = uploadIncidentPhotos.single('photo');
+const uploadMultiple = uploadIncidentPhotos.array('photos', 5);
+const uploadInspection = uploadInspectionPhotos.array('photos', 10);
 
 module.exports = { uploadSingle, uploadMultiple, uploadInspection };
