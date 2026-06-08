@@ -9,6 +9,7 @@ const uploadToCloudinary = (file) => {
         allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
         transformation: [{ width: 1200, quality: 'auto' }],
       },
+    
       (error, result) => {
         if (error) return reject(error);
         resolve({
